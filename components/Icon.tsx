@@ -1,0 +1,77 @@
+import React from "react";
+
+export const icons = {
+  settings:
+    "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z",
+  lightbulb: [
+    "M9 21h6",
+    "M12 3a6 6 0 0 1 6 6c0 2.22-1.2 4.16-3 5.2V17a1 1 0 0 1-1 1H10a1 1 0 0 1-1-1v-2.8C7.2 13.16 6 11.22 6 9a6 6 0 0 1 6-6z",
+  ],
+  clipboard: [
+    "M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2",
+    "M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z",
+  ],
+  plus: "M12 5v14M5 12h14",
+  spark: ["M13 2L3 14h9l-1 8 10-12h-9l1-8z"],
+  trash: [
+    "M3 6h18",
+    "M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6",
+    "M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2",
+  ],
+  check: "M20 6L9 17l-5-5",
+  calendar: [
+    "M3 4h18v18H3z",
+    "M16 2v4M8 2v4M3 10h18",
+  ],
+  x: "M18 6L6 18M6 6l12 12",
+  logo: [
+    "M12 2L2 7l10 5 10-5-10-5z",
+    "M2 17l10 5 10-5",
+    "M2 12l10 5 10-5",
+  ],
+  image: [
+    "M21 15l-5-5L5 21",
+    "M3 3h18v18H3z",
+    "M8.5 8.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z",
+  ],
+  link: [
+    "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71",
+    "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71",
+  ],
+};
+
+type IconProps = {
+  d: string | string[];
+  size?: number;
+  stroke?: string;
+  fill?: string;
+  strokeWidth?: number;
+  className?: string;
+};
+
+export function Icon({
+  d,
+  size = 16,
+  stroke = "currentColor",
+  fill = "none",
+  strokeWidth = 1.75,
+  className = "",
+}: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill={fill}
+      stroke={stroke}
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      {Array.isArray(d)
+        ? d.map((path, i) => <path key={i} d={path} />)
+        : <path d={d} />}
+    </svg>
+  );
+}
