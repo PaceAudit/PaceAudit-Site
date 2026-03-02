@@ -3,25 +3,33 @@ import { getDb } from "@/lib/db";
 
 const CONFIG_ID = 1;
 
+type ConfigRow = {
+  brand_voice: string | null;
+  value_props: string | null;
+  image_style: string | null;
+  primary_hex: string | null;
+  secondary_hex: string | null;
+} | undefined;
+
 export async function GET() {
   try {
     const db = getDb();
-    const row = db
+    const raw = db
       .prepare(
         "SELECT brand_voice, value_props, image_style, primary_hex, secondary_hex FROM Config WHERE id = ?"
       )
-      .get(CONFIG_ID) as
-      | {
-          brand_voice: string | null;
-          value_props: string | null;
-          image_style: string | null;
-          primary_hex: string | null;
-          secondary_hex: string | null;
-        }
-      | undefined;
+      .get(CONFIG_ID);
+    const row = raw as unknown as ConfigRow;
 
-    if (!row) {
-      return NextResponse.json(null);
+    if (
+      row === undefined ||
+      row === null ||
+      typeof (row as Record<string, unknown>).brand_voice === "undefined"
+    ) {
+      return NextResponse.json(
+        { message: "Configuration not found" },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json({

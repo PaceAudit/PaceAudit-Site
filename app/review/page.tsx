@@ -20,6 +20,8 @@ type SocialPost = {
 type Slot = {
   id: string;
   blogDate: string; // YYYY-MM-DD for tab label
+  topicId: number | null;
+  topicTitle: string;
   blogHtml: string;
   coverImageUrl: string | null;
   linkedin: SocialPost[];
@@ -34,13 +36,20 @@ function defaultDatetime(dayOffset: number, hour: number = 9): string {
   return d.toISOString().slice(0, 16);
 }
 
-function defaultSlot(id: string, blogDateOffset: number): Slot {
+function defaultSlot(
+  id: string,
+  blogDateOffset: number,
+  topicId: number | null = null,
+  topicTitle: string = ""
+): Slot {
   const blogDate = new Date();
   blogDate.setDate(blogDate.getDate() + blogDateOffset);
   const blogDateStr = blogDate.toISOString().slice(0, 10);
   return {
     id,
     blogDate: blogDateStr,
+    topicId,
+    topicTitle,
     blogHtml: "",
     coverImageUrl: null,
     linkedin: Array.from({ length: LINKEDIN_COUNT }, (_, i) => ({
@@ -60,84 +69,124 @@ function defaultSlot(id: string, blogDateOffset: number): Slot {
   };
 }
 
-function buildInitialSlots(): Slot[] {
-  return Array.from({ length: MAX_TABS }, (_, i) =>
-    defaultSlot(`slot-${Date.now()}-${i}`, i * 4)
-  );
+function buildSlotsFromTopics(topics: Topic[]): Slot[] {
+  return Array.from({ length: MAX_TABS }, (_, i) => {
+    const topic = topics[i % topics.length];
+    return defaultSlot(
+      `slot-${Date.now()}-${i}`,
+      i,
+      topic?.id ?? null,
+      topic?.title ?? ""
+    );
+  });
 }
+
+const pad = <T,>(arr: T[], n: number, fill: T): T[] =>
+  arr.length >= n ? arr.slice(0, n) : [...arr, ...Array(n - arr.length).fill(fill)];
 
 export default function ReviewPage() {
   const [reviewTopics, setReviewTopics] = useState<Topic[]>([]);
-  const [selectedTopicId, setSelectedTopicId] = useState<number | null>(null);
-  const [slots, setSlots] = useState<Slot[]>(() => buildInitialSlots());
+  const [slots, setSlots] = useState<Slot[]>([]);
   const [activeTabIndex, setActiveTabIndex] = useState(0);
   const [toast, setToast] = useState(false);
   const [loadingTopics, setLoadingTopics] = useState(true);
   const [loadingContent, setLoadingContent] = useState(false);
   const [generatingImageFor, setGeneratingImageFor] = useState<string | null>(null);
 
+  // Load topics (Review), then build one slot per day, each day = one topic (round-robin).
   useEffect(() => {
     fetch("/api/topics?status=Review")
       .then((res) => res.json())
       .then((data) => {
         const list = Array.isArray(data) ? data : [];
         setReviewTopics(list);
-        if (list.length > 0 && selectedTopicId === null) setSelectedTopicId(list[0].id);
-        else if (list.length > 0 && !list.some((t: Topic) => t.id === selectedTopicId))
-          setSelectedTopicId(list[0].id);
-        else if (list.length === 0) setSelectedTopicId(null);
+        setSlots(list.length > 0 ? buildSlotsFromTopics(list) : []);
       })
-      .catch(() => setReviewTopics([]))
+      .catch(() => {
+        setReviewTopics([]);
+        setSlots([]);
+      })
       .finally(() => setLoadingTopics(false));
   }, []);
 
-  const loadContentIntoFirstSlot = useCallback(() => {
-    if (selectedTopicId == null) return;
+  // For each slot with a topic and no content yet, fetch content; if missing, generate then fetch.
+  useEffect(() => {
+    const toLoad = slots.filter((s) => s.topicId != null && s.blogHtml === "");
+    if (toLoad.length === 0) return;
+
+    let cancelled = false;
     setLoadingContent(true);
-    fetch(`/api/content?topicId=${selectedTopicId}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (!data) {
-          setLoadingContent(false);
-          return;
+
+    Promise.all(
+      toLoad.map(async (slot) => {
+        const topicId = slot.topicId!;
+        let data: Record<string, unknown> | null = await fetch(
+          `/api/content?topicId=${topicId}`
+        ).then((r) => r.json());
+        if (data == null) {
+          await fetch(`/api/generate?topicId=${topicId}`, { method: "POST" });
+          data = await fetch(`/api/content?topicId=${topicId}`).then((r) => r.json());
         }
-        setSlots((prev) => {
-          const next = [...prev];
-          const pad = <T,>(arr: T[], n: number, fill: T): T[] =>
-            arr.length >= n ? arr.slice(0, n) : [...arr, ...Array(n - arr.length).fill(fill)];
-          const li = pad(Array.isArray(data.linkedin_copy) ? data.linkedin_copy : [], LINKEDIN_COUNT, "");
-          const tw = pad(Array.isArray(data.twitter_copy) ? data.twitter_copy : [], TWITTER_COUNT, "");
-          const blogDate = next[0]?.blogDate ?? new Date().toISOString().slice(0, 10);
-          next[0] = {
-            ...next[0],
-            blogHtml: data.blog_html ?? "",
-            coverImageUrl: data.image_url ?? null,
-            linkedin: next[0].linkedin.map((p, i) => ({ ...p, text: li[i] ?? "" })),
-            twitter: next[0].twitter.map((p, i) => ({ ...p, text: tw[i] ?? "" })),
-          };
-          return next;
-        });
-        if (data.scheduled_date) {
-          setSlots((prev) => {
-            const next = [...prev];
-            const d = data.scheduled_date.slice(0, 16);
-            next[0] = {
-              ...next[0],
-              linkedin: next[0].linkedin.map((p, i) => ({ ...p, datetime: d })),
-              twitter: next[0].twitter.map((p) => ({ ...p, datetime: d })),
-              instagram: next[0].instagram.map((p) => ({ ...p, datetime: d })),
+        return { slotId: slot.id, data };
+      })
+    )
+      .then((results) => {
+        if (cancelled) return;
+        setSlots((prev) =>
+          prev.map((s) => {
+            const r = results.find((x) => x.slotId === s.id);
+            if (!r || !r.data) return s;
+            const d = r.data as {
+              blog_html?: string;
+              linkedin_copy?: string[];
+              twitter_copy?: string[];
+              image_url?: string | null;
+              scheduled_date?: string | null;
             };
-            return next;
-          });
-        }
+            const li = pad(
+              Array.isArray(d.linkedin_copy) ? d.linkedin_copy : [],
+              LINKEDIN_COUNT,
+              ""
+            );
+            const tw = pad(
+              Array.isArray(d.twitter_copy) ? d.twitter_copy : [],
+              TWITTER_COUNT,
+              ""
+            );
+            const scheduled = d.scheduled_date
+              ? String(d.scheduled_date).slice(0, 16)
+              : null;
+            return {
+              ...s,
+              blogHtml: d.blog_html ?? "",
+              coverImageUrl: d.image_url ?? null,
+              linkedin: s.linkedin.map((p, i) => ({
+                ...p,
+                text: li[i] ?? "",
+                datetime: scheduled ?? p.datetime,
+              })),
+              twitter: s.twitter.map((p, i) => ({
+                ...p,
+                text: tw[i] ?? "",
+                datetime: scheduled ?? p.datetime,
+              })),
+              instagram: s.instagram.map((p) => ({
+                ...p,
+                datetime: scheduled ?? p.datetime,
+              })),
+            };
+          })
+        );
       })
       .catch(() => {})
-      .finally(() => setLoadingContent(false));
-  }, [selectedTopicId]);
+      .finally(() => {
+        if (!cancelled) setLoadingContent(false);
+      });
 
-  useEffect(() => {
-    loadContentIntoFirstSlot();
-  }, [loadContentIntoFirstSlot]);
+    return () => {
+      cancelled = true;
+    };
+  }, [slots]);
 
   const activeSlot = slots[activeTabIndex];
   const setActiveSlot = (updater: (s: Slot) => Slot) => {
@@ -147,13 +196,19 @@ export default function ReviewPage() {
   };
 
   const handleMarkAsPosted = () => {
+    const topic = reviewTopics[slots.length % Math.max(1, reviewTopics.length)];
     setSlots((prev) => {
       const rest = prev.slice(1);
       const nextId = `slot-${Date.now()}`;
       const lastDate = rest.length > 0 ? rest[rest.length - 1].blogDate : activeSlot.blogDate;
       const nextDate = new Date(lastDate);
-      nextDate.setDate(nextDate.getDate() + 4);
-      const newSlot = defaultSlot(nextId, 0);
+      nextDate.setDate(nextDate.getDate() + 1);
+      const newSlot = defaultSlot(
+        nextId,
+        prev.length,
+        topic?.id ?? null,
+        topic?.title ?? ""
+      );
       newSlot.blogDate = nextDate.toISOString().slice(0, 10);
       return [...rest, newSlot];
     });
@@ -163,12 +218,12 @@ export default function ReviewPage() {
   };
 
   const saveCurrentSlot = () => {
-    if (selectedTopicId == null || !activeSlot) return;
+    if (activeSlot?.topicId == null || !activeSlot) return;
     fetch("/api/content", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        topic_id: selectedTopicId,
+        topic_id: activeSlot.topicId,
         blog_html: activeSlot.blogHtml,
         linkedin_copy: activeSlot.linkedin.map((p) => p.text),
         twitter_copy: activeSlot.twitter.map((p) => p.text),
@@ -203,7 +258,9 @@ export default function ReviewPage() {
   };
 
   const handleGenerateCoverImage = () => {
-    const topic = reviewTopics.find((t) => t.id === selectedTopicId);
+    const topic = activeSlot?.topicTitle
+      ? { title: activeSlot.topicTitle }
+      : null;
     const prompt = topic
       ? `Featured image for blog post. Topic: ${topic.title}. Professional, clean, editorial. High quality, no text in image.`
       : "Professional blog featured image.";
@@ -251,25 +308,17 @@ export default function ReviewPage() {
         <div>
           <div className="topbar-title">Content Queue</div>
           <div className="topbar-sub">
-            Schedule a month of content. Each tab is one blog + 3 days of social. Up to {MAX_TABS} tabs.
+            One topic per day; content is auto-generated. Each tab = one day. Up to {MAX_TABS} days.
           </div>
         </div>
-        <div className="topic-select-row" style={{ margin: 0, flexWrap: "wrap", gap: 8 }}>
-          <select
-            style={{ width: 280 }}
-            value={selectedTopicId ?? ""}
-            onChange={(e) => setSelectedTopicId(e.target.value ? parseInt(e.target.value, 10) : null)}
-            disabled={reviewTopics.length === 0}
-          >
-            {reviewTopics.length === 0 && <option value="">No topics in Review</option>}
-            {reviewTopics.map((t) => (
-              <option key={t.id} value={t.id}>{t.title}</option>
-            ))}
-          </select>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          {reviewTopics.length === 0 && (
+            <span style={{ color: "var(--text3)", fontSize: 13 }}>No topics in Review — add topics and set status to Review</span>
+          )}
           <button
             className="btn btn-primary"
             onClick={saveCurrentSlot}
-            disabled={selectedTopicId == null || !activeSlot}
+            disabled={activeSlot?.topicId == null || !activeSlot}
           >
             <Icon d={icons.check} size={14} /> Save & Schedule
           </button>
@@ -310,6 +359,11 @@ export default function ReviewPage() {
               day: "numeric",
               year: "numeric",
             })}
+            {slot.topicTitle && (
+              <span style={{ marginLeft: 6, fontWeight: 400, color: "var(--text3)" }}>
+                · {slot.topicTitle.slice(0, 20)}{slot.topicTitle.length > 20 ? "…" : ""}
+              </span>
+            )}
           </button>
         ))}
       </div>

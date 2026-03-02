@@ -30,21 +30,23 @@ export type GeneratedPayload = {
 
 function getTopic(topicId: number): TopicRecord | null {
   const db = getDb();
-  const row = db
+  const raw = db
     .prepare(
       "SELECT id, title, keyword, angle, persona, status FROM Topics WHERE id = ?"
     )
-    .get(topicId) as TopicRecord | undefined;
+    .get(topicId);
+  const row = raw as unknown as TopicRecord | undefined;
   return row ?? null;
 }
 
 function getConfig(): ConfigRecord | null {
   const db = getDb();
-  const row = db
+  const raw = db
     .prepare(
       "SELECT brand_voice, value_props, image_style, primary_hex, secondary_hex FROM Config WHERE id = ?"
     )
-    .get(CONFIG_ID) as ConfigRecord | undefined;
+    .get(CONFIG_ID);
+  const row = raw as unknown as ConfigRecord | undefined;
   return row ?? null;
 }
 
@@ -210,7 +212,8 @@ function saveContentAndSetReview(
   const linkedinCopy = JSON.stringify(payload.linkedin_posts);
   const twitterCopy = JSON.stringify(payload.twitter_posts);
 
-  const existing = db.prepare("SELECT id FROM Content WHERE topic_id = ?").get(topicId) as { id: number } | undefined;
+  const existingRaw = db.prepare("SELECT id FROM Content WHERE topic_id = ?").get(topicId);
+  const existing = existingRaw as unknown as { id: number } | undefined;
 
   if (existing) {
     db.prepare(

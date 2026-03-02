@@ -24,9 +24,9 @@ export async function PATCH(
     const db = getDb();
     const result = db
       .prepare("UPDATE Topics SET status = ? WHERE id = ?")
-      .run(status, topicId);
+      .run(status, topicId) as unknown as { changes?: number };
 
-    if (result.changes === 0) {
+    if ((result?.changes ?? 0) === 0) {
       return NextResponse.json({ error: "Topic not found" }, { status: 404 });
     }
 
@@ -53,9 +53,9 @@ export async function DELETE(
 
     const db = getDb();
     db.prepare("DELETE FROM Content WHERE topic_id = ?").run(topicId);
-    const result = db.prepare("DELETE FROM Topics WHERE id = ?").run(topicId);
+    const result = db.prepare("DELETE FROM Topics WHERE id = ?").run(topicId) as unknown as { changes?: number };
 
-    if (result.changes === 0) {
+    if ((result?.changes ?? 0) === 0) {
       return NextResponse.json({ error: "Topic not found" }, { status: 404 });
     }
 

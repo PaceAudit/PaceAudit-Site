@@ -3,8 +3,8 @@
 import { useState } from "react";
 
 // ─── ICONS (inline SVG wrappers) ─────────────────────────────────────────────
-const Icon = ({ d, size = 16, stroke = "currentColor", fill = "none", strokeWidth = 1.75, className = "" }: { d: string | string[]; size?: number; stroke?: string; fill?: string; strokeWidth?: number; className?: string }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className}>
+const Icon = ({ d, size = 16, stroke = "currentColor", fill = "none", strokeWidth = 1.75, className = "", style }: { d: string | string[]; size?: number; stroke?: string; fill?: string; strokeWidth?: number; className?: string; style?: React.CSSProperties }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke={stroke} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} style={style}>
     {Array.isArray(d) ? d.map((path, i) => <path key={i} d={path} />) : <path d={d} />}
   </svg>
 );
@@ -573,7 +573,7 @@ function TopicsPage() {
             Topic Database
           </button>
           <button className={`tab-item${topicsTab === "schedule" ? " active" : ""}`} onClick={() => setTopicsTab("schedule")}>
-            <Icon d={icons.calendar} size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
+            <span style={{ marginRight: 6, verticalAlign: "middle", display: "inline-flex" }}><Icon d={icons.calendar} size={14} /></span>
             Blog Schedule
           </button>
         </div>

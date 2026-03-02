@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Icon, icons } from "@/components/Icon";
@@ -15,7 +15,7 @@ const defaultProps = [
   { id: 4, text: "One-click multi-channel publishing (LinkedIn, X, Blog)" },
 ];
 
-export default function ConfigPage() {
+function ConfigContent() {
   const [voice, setVoice] = useState(defaultVoice);
   const [props, setProps] = useState<{ id: number; text: string }[]>(defaultProps);
   const [imgStyle, setImgStyle] = useState(
@@ -263,5 +263,13 @@ export default function ConfigPage() {
 
       {toast && <Toast msg={toastMsg} />}
     </div>
+  );
+}
+
+export default function ConfigPage() {
+  return (
+    <Suspense fallback={<div>Loading settings...</div>}>
+      <ConfigContent />
+    </Suspense>
   );
 }

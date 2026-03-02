@@ -31,11 +31,12 @@ export async function GET(request: Request) {
           { status: 400 }
         );
       }
-      const row = db
+      const raw = db
         .prepare(
           "SELECT id, topic_id, blog_html, linkedin_copy, twitter_copy, facebook_copy, image_url, scheduled_date, published_date, status FROM Content WHERE topic_id = ?"
         )
-        .get(topicId) as ContentRow | undefined;
+        .get(topicId);
+      const row = raw as unknown as ContentRow | undefined;
 
       if (!row) {
         return NextResponse.json(null);
@@ -131,9 +132,10 @@ export async function POST(request: Request) {
         : "Draft";
 
     const db = getDb();
-    const existing = db
+    const existingRaw = db
       .prepare("SELECT id FROM Content WHERE topic_id = ?")
-      .get(topic_id) as { id: number } | undefined;
+      .get(topic_id);
+    const existing = existingRaw as unknown as { id: number } | undefined;
 
     if (existing) {
       db.prepare(

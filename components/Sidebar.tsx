@@ -9,6 +9,7 @@ const navItems = [
   { id: "topics", href: "/topics", label: "Topic Database", icon: icons.lightbulb },
   { id: "review", href: "/review", label: "Review Queue", icon: icons.clipboard },
   { id: "connections", href: "/connections", label: "Connections", icon: icons.link },
+  { id: "admin", href: "/admin", label: "Admin", icon: icons.send },
 ];
 
 export function Sidebar() {

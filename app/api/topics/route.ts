@@ -66,10 +66,11 @@ export async function POST(request: Request) {
       .prepare(
         `INSERT INTO Topics (title, keyword, angle, persona, status) VALUES (?, ?, ?, ?, ?)`
       )
-      .run(title, keyword, angle, persona, status);
+      .run(title, keyword, angle, persona, status) as unknown as { lastInsertRowid?: number };
 
-    const id = result.lastInsertRowid as number;
-    const row = db.prepare("SELECT id, title, keyword, angle, persona, status FROM Topics WHERE id = ?").get(id) as TopicRow;
+    const id = result?.lastInsertRowid ?? 0;
+    const rawRow = db.prepare("SELECT id, title, keyword, angle, persona, status FROM Topics WHERE id = ?").get(id);
+    const row = rawRow as unknown as TopicRow;
 
     return NextResponse.json({
       id: row.id,

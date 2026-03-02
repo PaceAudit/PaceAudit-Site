@@ -15,11 +15,12 @@ type TokenRecord = {
 export function getLinkedInTokens(): TokenRecord | null {
   try {
     const db = getDb();
-    const row = db
+    const raw = db
       .prepare(
         "SELECT linkedin_access_token, linkedin_refresh_token FROM Config WHERE id = 1"
       )
-      .get() as { linkedin_access_token: string | null; linkedin_refresh_token: string | null } | undefined;
+      .get();
+    const row = raw as unknown as { linkedin_access_token: string | null; linkedin_refresh_token: string | null } | undefined;
 
     if (row && row.linkedin_access_token && row.linkedin_refresh_token) {
       return {
@@ -53,9 +54,10 @@ export function getLinkedInTokens(): TokenRecord | null {
 export function getLinkedInPersonUrn(): string | null {
   try {
     const db = getDb();
-    const row = db
+    const raw = db
       .prepare("SELECT linkedin_person_urn FROM Config WHERE id = 1")
-      .get() as { linkedin_person_urn: string | null } | undefined;
+      .get();
+    const row = raw as unknown as { linkedin_person_urn: string | null } | undefined;
     if (row?.linkedin_person_urn) return row.linkedin_person_urn;
   } catch {
     /* ignore */

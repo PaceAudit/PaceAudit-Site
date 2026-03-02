@@ -38,6 +38,7 @@ export const icons = {
     "M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71",
     "M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71",
   ],
+  send: "M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z",
 };
 
 type IconProps = {
@@ -47,6 +48,7 @@ type IconProps = {
   fill?: string;
   strokeWidth?: number;
   className?: string;
+  style?: React.CSSProperties;
 };
 
 export function Icon({
@@ -56,6 +58,7 @@ export function Icon({
   fill = "none",
   strokeWidth = 1.75,
   className = "",
+  style,
 }: IconProps) {
   return (
     <svg
@@ -68,6 +71,7 @@ export function Icon({
       strokeLinecap="round"
       strokeLinejoin="round"
       className={className}
+      style={style}
     >
       {Array.isArray(d)
         ? d.map((path, i) => <path key={i} d={path} />)

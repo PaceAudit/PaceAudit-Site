@@ -20,11 +20,15 @@ content.db
 # LinkedIn OAuth tokens (stored when db is stub)
 .linkedin-tokens.json
 
-# misc
+# OS metadata
 .DS_Store
+Thumbs.db
+
+# misc
 *.pem
 
 # debug
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -39,3 +43,4 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.env* 
