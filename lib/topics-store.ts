@@ -18,6 +18,9 @@ export type StoredTopic = {
 };
 
 function topicsPath(): string {
+  // Vercel serverless filesystem is read-only under /var/task.
+  // Use /tmp as writable fallback for file-based mode.
+  if (process.env.VERCEL) return join("/tmp", TOPICS_FILE);
   return join(process.cwd(), TOPICS_FILE);
 }
 
