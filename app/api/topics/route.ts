@@ -20,6 +20,16 @@ type TopicRow = {
   image_url?: string | null;
 };
 
+function parseFlat(raw: string | null | undefined, fallback = ""): string {
+  if (raw == null || raw === "") return fallback;
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) && typeof arr[0] === "string" ? arr[0] : raw;
+  } catch {
+    return typeof raw === "string" ? raw : fallback;
+  }
+}
+
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
@@ -46,16 +56,6 @@ export async function GET(request: Request) {
            ORDER BY t.id DESC`
         ).all()) as TopicRow[];
       }
-
-    const parseFlat = (raw: string | null | undefined, fallback = ""): string => {
-      if (raw == null || raw === "") return fallback;
-      try {
-        const arr = JSON.parse(raw);
-        return Array.isArray(arr) && typeof arr[0] === "string" ? arr[0] : raw;
-      } catch {
-        return typeof raw === "string" ? raw : fallback;
-      }
-    };
 
       const topics = rows.map((r) => ({
       id: r.id,

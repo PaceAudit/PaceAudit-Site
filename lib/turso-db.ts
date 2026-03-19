@@ -38,17 +38,17 @@ export function createTursoAdapter(client: Client): DbAdapter {
       return {
         async all(...args: unknown[]) {
           const { sql: s, args: a } = runParams(sql, args);
-          const rs = await client.execute({ sql: s, args: a });
+          const rs = await client.execute({ sql: s, args: a as any });
           return rs.rows as unknown[];
         },
         async get(...args: unknown[]) {
           const { sql: s, args: a } = runParams(sql, args);
-          const rs = await client.execute({ sql: s, args: a });
+          const rs = await client.execute({ sql: s, args: a as any });
           return rs.rows[0];
         },
         async run(...args: unknown[]) {
           const { sql: s, args: a } = runParams(sql, args);
-          await client.execute({ sql: s, args: a });
+          await client.execute({ sql: s, args: a as any });
         },
       };
     },

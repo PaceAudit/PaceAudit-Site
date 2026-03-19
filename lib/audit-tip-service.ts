@@ -45,10 +45,10 @@ async function getRandomTopic(): Promise<TopicRow | null> {
   }
 
   try {
-    const db = getDb();
-    const rows = db.prepare(
+    const db = await getDb();
+    const rows = (await db.prepare(
       "SELECT id, title, keyword, angle, persona, status FROM Topics ORDER BY RANDOM() LIMIT 1"
-    ).all() as TopicRow[];
+    ).all()) as TopicRow[];
     return rows[0] ?? null;
   } catch {
     return null;

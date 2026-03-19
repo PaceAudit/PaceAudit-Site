@@ -111,7 +111,7 @@ export async function deployFileToNetlify(input: {
       headers: {
         "Content-Type": input.contentType ?? "text/html; charset=utf-8",
       },
-      body: contentBuffer,
+      body: new Uint8Array(contentBuffer),
     });
     if (!putRes.ok) {
       const err = await putRes.text();
