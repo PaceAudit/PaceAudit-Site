@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
       /* ignore — person URN optional */
     }
 
-    saveLinkedInTokens(
+    await saveLinkedInTokens(
       data.access_token,
       data.refresh_token ?? "",
       personUrn

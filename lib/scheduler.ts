@@ -18,7 +18,20 @@ type ContentRow = {
   facebook_copy: string | null;
   image_url: string | null;
   scheduled_date: string | null;
+  linkedin_posted_indices: string | null;
+  twitter_posted_indices: string | null;
+  instagram_posted_indices: string | null;
 };
+
+function parsePostedIndices(raw: string | null | undefined): number[] {
+  if (raw == null || !String(raw).trim()) return [];
+  try {
+    const arr = JSON.parse(String(raw));
+    return Array.isArray(arr) ? arr.filter((x: unknown) => typeof x === "number" && Number.isInteger(x)) : [];
+  } catch {
+    return [];
+  }
+}
 
 /**
  * Trigger a Netlify build so the site reflects the latest GitHub content.
@@ -128,7 +141,7 @@ export async function publishToX(text: string): Promise<{ ok: boolean; error?: s
 /** Post the first LinkedIn post via LinkedIn REST API (UGC/Posts). Uses OAuth token (refreshed if needed) or LINKEDIN_ACCESS_TOKEN. Person URN from OAuth or LINKEDIN_PERSON_URN env. */
 export async function publishToLinkedIn(text: string): Promise<{ ok: boolean; error?: string }> {
   const accessToken = await getLinkedInAccessToken();
-  const personUrn = getLinkedInPersonUrn();
+  const personUrn = await getLinkedInPersonUrn();
 
   if (!accessToken || !personUrn) {
     return { ok: false, error: "LinkedIn not connected (Connect LinkedIn) or LINKEDIN_ACCESS_TOKEN and LINKEDIN_PERSON_URN required" };
@@ -163,44 +176,57 @@ export async function publishToLinkedIn(text: string): Promise<{ ok: boolean; er
   }
 }
 
-function getScheduledContent(): ContentRow[] {
-  const db = getDb();
+async function getScheduledContent(): Promise<ContentRow[]> {
+  const db = await getDb();
   const now = new Date().toISOString();
-  const rows = db
+  const rows = (await db
     .prepare(
-      `SELECT id, topic_id, blog_html, linkedin_copy, twitter_copy, facebook_copy, image_url, scheduled_date
+      `SELECT id, topic_id, blog_html, linkedin_copy, twitter_copy, facebook_copy, image_url, scheduled_date,
+              linkedin_posted_indices, twitter_posted_indices, instagram_posted_indices
        FROM Content
        WHERE status = 'Scheduled' AND scheduled_date IS NOT NULL AND scheduled_date <= ?`
     )
-    .all(now) as ContentRow[];
+    .all(now)) as ContentRow[];
   return rows;
 }
 
-function markPublished(contentId: number, topicId: number): void {
-  const db = getDb();
-  db.prepare(
+async function markPublished(contentId: number, topicId: number): Promise<void> {
+  const db = await getDb();
+  await db.prepare(
     "UPDATE Content SET status = 'Published', published_date = ? WHERE id = ?"
   ).run(new Date().toISOString(), contentId);
-  db.prepare("UPDATE Topics SET status = 'Published' WHERE id = ?").run(topicId);
+  await db.prepare("UPDATE Topics SET status = 'Published' WHERE id = ?").run(topicId);
 }
 
 async function runPublishCycle(): Promise<void> {
-  const rows = getScheduledContent();
+  const db = await getDb();
+  const rows = await getScheduledContent();
   for (const row of rows) {
     const blogHtml = row.blog_html ?? "";
     let linkedinCopy: string[] = [];
     let twitterCopy: string[] = [];
+    let facebookCopy: string[] = [];
     try {
       if (row.linkedin_copy) linkedinCopy = JSON.parse(row.linkedin_copy);
       if (row.twitter_copy) twitterCopy = JSON.parse(row.twitter_copy);
+      if (row.facebook_copy) facebookCopy = JSON.parse(row.facebook_copy);
     } catch {
-      // ignore
+      /* ignore */
     }
-    const firstLinkedIn = linkedinCopy[0]?.trim() || "";
-    const firstTwitter = twitterCopy[0]?.trim() || "";
-    const facebookMessage = (row.facebook_copy?.trim() || firstLinkedIn).slice(0, 5000);
+    const linkedinPosted = parsePostedIndices(row.linkedin_posted_indices);
+    const twitterPosted = parsePostedIndices(row.twitter_posted_indices);
+    const instagramPosted = parsePostedIndices(row.instagram_posted_indices);
 
-    // 1) Netlify website: push to GitHub (content source for Netlify), then trigger deploy
+    // First unposted index per platform (scheduler posts one segment per platform per run)
+    const liIdx = [0, 1, 2].find((i) => !linkedinPosted.includes(i));
+    const twIdx = [0, 1, 2, 3, 4, 5].find((i) => !twitterPosted.includes(i));
+    const igIdx = [0, 1, 2].find((i) => !instagramPosted.includes(i));
+
+    const firstLinkedIn = liIdx != null ? linkedinCopy[liIdx]?.trim() : "";
+    const firstTwitter = twIdx != null ? (twitterCopy[twIdx] ?? "").trim().slice(0, 280) : "";
+    const facebookMessage = (igIdx != null ? facebookCopy[igIdx] : facebookCopy[0])?.trim()?.slice(0, 5000) || firstLinkedIn.slice(0, 5000);
+
+    // 1) Netlify website: push to GitHub (unchanged — blog is published separately via cron/publish-now)
     let ghOk = false;
     if (blogHtml) {
       const gh = await publishToGitHub(blogHtml);
@@ -212,32 +238,52 @@ async function runPublishCycle(): Promise<void> {
       }
     }
 
-    // 2) Build public image URL: use row.image_url if already public, else construct from SITE_URL after GitHub success
     let publicImageUrl: string | null =
       row.image_url && row.image_url.startsWith("http") ? row.image_url : null;
     if (!publicImageUrl && ghOk && process.env.SITE_URL) {
       publicImageUrl = `${process.env.SITE_URL.replace(/\/$/, "")}/images/content-${row.id}.jpg`;
     }
-
-    // 3) Meta (Facebook & Instagram) — require public image URL
-    if (publicImageUrl && facebookMessage) {
-      const fb = await publishToFacebook(row.id, facebookMessage, publicImageUrl);
-      if (!fb.ok) console.error("[scheduler] Facebook:", fb.error);
-      const ig = await publishToInstagram(row.id, facebookMessage, publicImageUrl);
-      if (!ig.ok) console.error("[scheduler] Instagram:", ig.error);
+    let igImageUrl = publicImageUrl;
+    if (!igImageUrl && row.image_url && String(row.image_url).startsWith("http")) {
+      igImageUrl = row.image_url;
     }
 
-    // 4) X and LinkedIn
-    if (firstTwitter) {
+    // 2) Meta (Facebook & Instagram) — only post next unposted index
+    if (igImageUrl && facebookMessage && igIdx != null) {
+      const fb = await publishToFacebook(row.id, facebookMessage, igImageUrl);
+      if (!fb.ok) console.error("[scheduler] Facebook:", fb.error);
+      const ig = await publishToInstagram(row.id, facebookMessage, igImageUrl);
+      if (!ig.ok) console.error("[scheduler] Instagram:", ig.error);
+      if (ig.ok) {
+        const next = [...instagramPosted, igIdx].sort((a, b) => a - b);
+        await db.prepare("UPDATE Content SET instagram_posted_indices = ? WHERE id = ?").run(JSON.stringify(next), row.id);
+      }
+    }
+
+    // 3) X and LinkedIn — only post next unposted index
+    if (firstTwitter && twIdx != null) {
       const x = await publishToX(firstTwitter);
       if (!x.ok) console.error("[scheduler] X:", x.error);
+      if (x.ok) {
+        const next = [...twitterPosted, twIdx].sort((a, b) => a - b);
+        await db.prepare("UPDATE Content SET twitter_posted_indices = ? WHERE id = ?").run(JSON.stringify(next), row.id);
+      }
     }
-    if (firstLinkedIn) {
+    if (firstLinkedIn && liIdx != null) {
       const li = await publishToLinkedIn(firstLinkedIn);
       if (!li.ok) console.error("[scheduler] LinkedIn:", li.error);
+      if (li.ok) {
+        const next = [...linkedinPosted, liIdx].sort((a, b) => a - b);
+        await db.prepare("UPDATE Content SET linkedin_posted_indices = ? WHERE id = ?").run(JSON.stringify(next), row.id);
+      }
     }
 
-    markPublished(row.id, row.topic_id);
+    const nextLi = linkedinPosted.length + (firstLinkedIn && liIdx != null ? 1 : 0);
+    const nextTw = twitterPosted.length + (firstTwitter && twIdx != null ? 1 : 0);
+    const nextIg = instagramPosted.length + (igIdx != null && facebookMessage ? 1 : 0);
+    if (nextLi >= 1 && nextTw >= 1 && nextIg >= 1) {
+      await markPublished(row.id, row.topic_id);
+    }
   }
 }
 

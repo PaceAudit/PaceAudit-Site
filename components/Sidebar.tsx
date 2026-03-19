@@ -8,6 +8,7 @@ const navItems = [
   { id: "config", href: "/config", label: "Brand Config", icon: icons.settings },
   { id: "topics", href: "/topics", label: "Topic Database", icon: icons.lightbulb },
   { id: "review", href: "/review", label: "Review Queue", icon: icons.clipboard },
+  { id: "articles", href: "/articles", label: "Articles", icon: icons.external },
   { id: "connections", href: "/connections", label: "Connections", icon: icons.link },
   { id: "admin", href: "/admin", label: "Admin", icon: icons.send },
 ];
@@ -19,7 +20,7 @@ export function Sidebar() {
     <aside className="sidebar">
       <Link href="/topics" className="sidebar-logo" style={{ textDecoration: "none", color: "inherit" }}>
         <div className="sidebar-logo-icon">
-          <Icon d={icons.spark} size={14} fill="currentColor" stroke="none" />
+          <Icon d={icons.logo} size={18} />
         </div>
         SPH AI
       </Link>

@@ -48,7 +48,7 @@ async function publishToX(text: string): Promise<{ ok: boolean; error?: string }
 async function publishToLinkedIn(text: string): Promise<{ ok: boolean; error?: string }> {
   const { getLinkedInAccessToken, getLinkedInPersonUrn } = await import("./linkedin-auth");
   const accessToken = await getLinkedInAccessToken();
-  const personUrn = getLinkedInPersonUrn();
+  const personUrn = await getLinkedInPersonUrn();
 
   if (!accessToken || !personUrn) {
     return { ok: false, error: "LinkedIn not connected (Connect LinkedIn) or env vars missing" };

@@ -20,6 +20,16 @@ content.db
 # LinkedIn OAuth tokens (stored when db is stub)
 .linkedin-tokens.json
 
+# File-based brand config (optional local override)
+.config-store.json
+.content-images-meta.json
+.topics-store.json
+
+# Uploaded content images
+public/uploads/
+# Generated images (e.g. for Instagram publish from data URLs)
+public/generated/
+
 # OS metadata
 .DS_Store
 Thumbs.db

@@ -12,10 +12,10 @@ type TokenRecord = {
 };
 
 /** Read tokens from Config table or JSON file fallback. */
-export function getLinkedInTokens(): TokenRecord | null {
+export async function getLinkedInTokens(): Promise<TokenRecord | null> {
   try {
-    const db = getDb();
-    const raw = db
+    const db = await getDb();
+    const raw = await db
       .prepare(
         "SELECT linkedin_access_token, linkedin_refresh_token FROM Config WHERE id = 1"
       )
@@ -51,10 +51,10 @@ export function getLinkedInTokens(): TokenRecord | null {
 }
 
 /** Read LinkedIn person URN from Config table or JSON file. Falls back to LINKEDIN_PERSON_URN env. */
-export function getLinkedInPersonUrn(): string | null {
+export async function getLinkedInPersonUrn(): Promise<string | null> {
   try {
-    const db = getDb();
-    const raw = db
+    const db = await getDb();
+    const raw = await db
       .prepare("SELECT linkedin_person_urn FROM Config WHERE id = 1")
       .get();
     const row = raw as unknown as { linkedin_person_urn: string | null } | undefined;
@@ -77,19 +77,19 @@ export function getLinkedInPersonUrn(): string | null {
 }
 
 /** Save tokens and optional person URN to Config and JSON file. When person_urn is undefined, only tokens are updated (preserves existing URN). */
-export function saveLinkedInTokens(
+export async function saveLinkedInTokens(
   access_token: string,
   refresh_token: string,
   person_urn?: string | null
-): void {
+): Promise<void> {
   try {
-    const db = getDb();
+    const db = await getDb();
     if (person_urn !== undefined) {
-      db.prepare(
+      await db.prepare(
         "UPDATE Config SET linkedin_access_token = ?, linkedin_refresh_token = ?, linkedin_person_urn = ? WHERE id = 1"
       ).run(access_token, refresh_token, person_urn ?? null);
     } else {
-      db.prepare(
+      await db.prepare(
         "UPDATE Config SET linkedin_access_token = ?, linkedin_refresh_token = ? WHERE id = 1"
       ).run(access_token, refresh_token);
     }
@@ -120,7 +120,7 @@ export function saveLinkedInTokens(
  * Saves new access_token back to Config/file.
  */
 export async function refreshLinkedInTokenIfNeeded(): Promise<string | null> {
-  const tokens = getLinkedInTokens();
+  const tokens = await getLinkedInTokens();
   if (!tokens?.refresh_token) return null;
 
   const clientId = process.env.LINKEDIN_CLIENT_ID;
@@ -150,7 +150,7 @@ export async function refreshLinkedInTokenIfNeeded(): Promise<string | null> {
     };
 
     if (res.ok && data.access_token) {
-      saveLinkedInTokens(
+      await saveLinkedInTokens(
         data.access_token,
         data.refresh_token ?? tokens.refresh_token
       );

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getDb } from "@/lib/db";
+import { getDb, useTurso } from "@/lib/db";
+import { updateTopicStatus, removeTopicById } from "@/lib/topics-store";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -16,20 +17,18 @@ export async function PATCH(
 
     const body = await request.json();
     const status = body.status;
-    const valid = ["Pending", "Generating", "Review", "Published"];
+    const valid = ["Pending", "Generating", "Review", "Approved", "Published", "Error"];
     if (typeof status !== "string" || !valid.includes(status)) {
       return NextResponse.json({ error: "Invalid status" }, { status: 400 });
     }
 
-    const db = getDb();
-    const result = db
-      .prepare("UPDATE Topics SET status = ? WHERE id = ?")
-      .run(status, topicId) as unknown as { changes?: number };
-
-    if ((result?.changes ?? 0) === 0) {
-      return NextResponse.json({ error: "Topic not found" }, { status: 404 });
+    if (!useTurso()) {
+      const updated = updateTopicStatus(topicId, status);
+      if (updated) return NextResponse.json({ ok: true });
     }
 
+    const db = await getDb();
+    await db.prepare("UPDATE Topics SET status = ? WHERE id = ?").run(status, topicId);
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("PATCH /api/topics/[id]", e);
@@ -51,14 +50,13 @@ export async function DELETE(
       return NextResponse.json({ error: "Invalid id" }, { status: 400 });
     }
 
-    const db = getDb();
-    db.prepare("DELETE FROM Content WHERE topic_id = ?").run(topicId);
-    const result = db.prepare("DELETE FROM Topics WHERE id = ?").run(topicId) as unknown as { changes?: number };
-
-    if ((result?.changes ?? 0) === 0) {
-      return NextResponse.json({ error: "Topic not found" }, { status: 404 });
+    if (!useTurso()) {
+      if (removeTopicById(topicId)) return NextResponse.json({ ok: true });
     }
 
+    const db = await getDb();
+    await db.prepare("DELETE FROM Content WHERE topic_id = ?").run(topicId);
+    await db.prepare("DELETE FROM Topics WHERE id = ?").run(topicId);
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("DELETE /api/topics/[id]", e);
