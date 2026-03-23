@@ -5,10 +5,16 @@ import { createClient, type Client } from "@libsql/client";
 
 let tursoClient: Client | null = null;
 
+function isValidTursoUrl(url: string | undefined): boolean {
+  const raw = (url ?? "").trim();
+  if (!raw) return false;
+  return raw.startsWith("libsql://") || raw.startsWith("https://") || raw.startsWith("http://");
+}
+
 export function getTursoClient(): Client | null {
   const url = process.env.TURSO_DATABASE_URL?.trim();
   const token = process.env.TURSO_AUTH_TOKEN?.trim();
-  if (!url || !token) return null;
+  if (!isValidTursoUrl(url) || !token) return null;
   if (!tursoClient) {
     tursoClient = createClient({ url, authToken: token });
   }
@@ -16,7 +22,7 @@ export function getTursoClient(): Client | null {
 }
 
 export function isTursoConfigured(): boolean {
-  return !!(process.env.TURSO_DATABASE_URL?.trim() && process.env.TURSO_AUTH_TOKEN?.trim());
+  return !!(isValidTursoUrl(process.env.TURSO_DATABASE_URL) && process.env.TURSO_AUTH_TOKEN?.trim());
 }
 
 /** LibSQL uses ? placeholders; convert to positional args. */

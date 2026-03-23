@@ -1095,6 +1095,21 @@ function parseSocialArrays(parsed: Record<string, unknown>): {
   twitter_post: string;
   instagram_post: string;
 } {
+  const p = parsed as Record<string, unknown>;
+  const nested =
+    (p.social as Record<string, unknown> | undefined) ??
+    (p.posts as Record<string, unknown> | undefined) ??
+    (p.output as Record<string, unknown> | undefined) ??
+    null;
+
+  const pick = (keys: string[]): unknown => {
+    for (const k of keys) {
+      if (typeof p[k] !== "undefined") return p[k];
+      if (nested && typeof nested[k] !== "undefined") return nested[k];
+    }
+    return undefined;
+  };
+
   const toStrArr = (v: unknown, max: number): string[] => {
     if (Array.isArray(v)) {
       const captions = v
@@ -1111,9 +1126,18 @@ function parseSocialArrays(parsed: Record<string, unknown>): {
     if (typeof v === "string" && v.trim()) return [v.trim()];
     return [];
   };
-  const liArr = toStrArr(parsed.linkedin_posts ?? parsed.linkedin_post, LINKEDIN_COUNT);
-  const twArr = toStrArr(parsed.twitter_posts ?? parsed.twitter_post, TWITTER_COUNT);
-  const igArr = toStrArr(parsed.instagram_posts ?? parsed.instagram_post, INSTAGRAM_COUNT);
+  const liArr = toStrArr(
+    pick(["linkedin_posts", "linkedinPosts", "linkedin", "linkedIn_posts", "linkedInPosts", "linkedin_post"]),
+    LINKEDIN_COUNT
+  );
+  const twArr = toStrArr(
+    pick(["twitter_posts", "twitterPosts", "tweets", "x_posts", "xPosts", "twitter_post"]),
+    TWITTER_COUNT
+  );
+  const igArr = toStrArr(
+    pick(["instagram_posts", "instagramPosts", "instagram", "ig_posts", "igPosts", "instagram_post"]),
+    INSTAGRAM_COUNT
+  );
   return {
     linkedin_posts: liArr,
     twitter_posts: twArr,
@@ -1390,6 +1414,8 @@ ${blogContent.length > 8000 ? "\n[... truncated]" : ""}`;
   }
   if (!validateCadence(parsed as Record<string, unknown>)) {
     const obj = parsed as Record<string, unknown>;
+    const detail = validateCadenceDetailed(obj);
+    console.error("[generateSocialPosts] Invalid cadence detail:", detail.reason ?? "unknown");
     // #region agent log
     fetch("http://127.0.0.1:7822/ingest/d299f8e8-acc9-48de-a2c7-afb2bceab8c9", {
       method: "POST",
@@ -1401,6 +1427,7 @@ ${blogContent.length > 8000 ? "\n[... truncated]" : ""}`;
         location: "lib/ai-service.ts:generateSocialPosts:throw-invalid-cadence",
         message: "Throwing invalid social JSON cadence error",
         data: {
+          reason: detail.reason ?? null,
           igLen: Array.isArray(obj.instagram_posts) ? obj.instagram_posts.length : null,
           liLen: Array.isArray(obj.linkedin_posts) ? obj.linkedin_posts.length : null,
           twLen: Array.isArray(obj.twitter_posts) ? obj.twitter_posts.length : null,
@@ -1412,6 +1439,23 @@ ${blogContent.length > 8000 ? "\n[... truncated]" : ""}`;
       }),
     }).catch(() => {});
     // #endregion
+
+    // Graceful fallback: when structure is mostly valid but strict ordering/type checks fail,
+    // continue with parsed caption arrays rather than failing the whole generation.
+    const fallback = parseSocialArrays(obj);
+    if (
+      fallback.linkedin_posts.length >= LINKEDIN_COUNT &&
+      fallback.twitter_posts.length >= TWITTER_COUNT &&
+      fallback.instagram_posts.length >= INSTAGRAM_COUNT
+    ) {
+      console.warn("[generateSocialPosts] Falling back to parsed caption arrays despite cadence mismatch");
+      return {
+        linkedin_posts: fallback.linkedin_posts.slice(0, LINKEDIN_COUNT),
+        twitter_posts: fallback.twitter_posts.slice(0, TWITTER_COUNT),
+        instagram_posts: fallback.instagram_posts.slice(0, INSTAGRAM_COUNT),
+      };
+    }
+
     throw new Error(
       "Invalid social JSON: each of linkedin_posts, twitter_posts, instagram_posts must be an array of exactly 3 post objects in order [cady, scramble, text] with caption and imagePrompt"
     );
