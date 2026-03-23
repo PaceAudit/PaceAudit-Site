@@ -214,23 +214,28 @@ export async function POST(request: Request) {
         ? body.instagram_visual_prompts
         : "[]";
 
-    writeConfig({
-      brand_voice,
-      linkedin_persona,
-      instagram_persona,
-      twitter_persona,
-      value_props,
-      image_style,
-      image_negative_prompts,
-      primary_hex,
-      secondary_hex,
-      blog_visual_prompts,
-      linkedin_visual_prompts,
-      twitter_visual_prompts,
-      instagram_visual_prompts,
-    });
+    const tursoConfigured = useTurso();
+    // #region agent log
+    fetch("http://127.0.0.1:7822/ingest/d299f8e8-acc9-48de-a2c7-afb2bceab8c9", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "584c98" },
+      body: JSON.stringify({
+        sessionId: "584c98",
+        runId: "config-save",
+        hypothesisId: "H1",
+        location: "app/api/config/route.ts:POST:start",
+        message: "Config save path selected",
+        data: {
+          tursoConfigured,
+          hasTursoUrl: !!process.env.TURSO_DATABASE_URL?.trim(),
+          hasTursoToken: !!process.env.TURSO_AUTH_TOKEN?.trim(),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
 
-    if (useTurso()) {
+    if (tursoConfigured) {
       try {
         const db = await getDb();
         await db.prepare(
@@ -251,7 +256,22 @@ export async function POST(request: Request) {
            twitter_visual_prompts = excluded.twitter_visual_prompts,
            instagram_visual_prompts = excluded.instagram_visual_prompts`
         ).run(CONFIG_ID, brand_voice, linkedin_persona, instagram_persona, twitter_persona, value_props, image_style, image_negative_prompts, primary_hex, secondary_hex, blog_visual_prompts, linkedin_visual_prompts, twitter_visual_prompts, instagram_visual_prompts);
-      } catch {
+        // #region agent log
+        fetch("http://127.0.0.1:7822/ingest/d299f8e8-acc9-48de-a2c7-afb2bceab8c9", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "584c98" },
+          body: JSON.stringify({
+            sessionId: "584c98",
+            runId: "config-save",
+            hypothesisId: "H2",
+            location: "app/api/config/route.ts:POST:turso-upsert",
+            message: "Config save to Turso succeeded via ON CONFLICT",
+            data: { ok: true },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
+      } catch (e1) {
         // Config may not exist yet - INSERT without ON CONFLICT
         try {
           const db = await getDb();
@@ -259,12 +279,59 @@ export async function POST(request: Request) {
             `INSERT OR REPLACE INTO Config (id, brand_voice, linkedin_persona, instagram_persona, twitter_persona, value_props, image_style, image_negative_prompts, primary_hex, secondary_hex, blog_visual_prompts, linkedin_visual_prompts, twitter_visual_prompts, instagram_visual_prompts)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           ).run(CONFIG_ID, brand_voice, linkedin_persona, instagram_persona, twitter_persona, value_props, image_style, image_negative_prompts, primary_hex, secondary_hex, blog_visual_prompts, linkedin_visual_prompts, twitter_visual_prompts, instagram_visual_prompts);
-        } catch {
-          /* ignore */
+          // #region agent log
+          fetch("http://127.0.0.1:7822/ingest/d299f8e8-acc9-48de-a2c7-afb2bceab8c9", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "584c98" },
+            body: JSON.stringify({
+              sessionId: "584c98",
+              runId: "config-save",
+              hypothesisId: "H2",
+              location: "app/api/config/route.ts:POST:turso-insert-replace",
+              message: "Config save to Turso succeeded via INSERT OR REPLACE",
+              data: { ok: true },
+              timestamp: Date.now(),
+            }),
+          }).catch(() => {});
+          // #endregion
+        } catch (e2) {
+          const msg1 = e1 instanceof Error ? e1.message : String(e1);
+          const msg2 = e2 instanceof Error ? e2.message : String(e2);
+          // #region agent log
+          fetch("http://127.0.0.1:7822/ingest/d299f8e8-acc9-48de-a2c7-afb2bceab8c9", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "584c98" },
+            body: JSON.stringify({
+              sessionId: "584c98",
+              runId: "config-save",
+              hypothesisId: "H3",
+              location: "app/api/config/route.ts:POST:turso-failed",
+              message: "Config save to Turso failed",
+              data: { firstError: msg1, secondError: msg2 },
+              timestamp: Date.now(),
+            }),
+          }).catch(() => {});
+          // #endregion
+          return NextResponse.json({ error: `Failed to save config to Turso: ${msg2}` }, { status: 500 });
         }
       }
     } else {
-      // File store fallback
+      // File store fallback (local/dev mode)
+      writeConfig({
+        brand_voice,
+        linkedin_persona,
+        instagram_persona,
+        twitter_persona,
+        value_props,
+        image_style,
+        image_negative_prompts,
+        primary_hex,
+        secondary_hex,
+        blog_visual_prompts,
+        linkedin_visual_prompts,
+        twitter_visual_prompts,
+        instagram_visual_prompts,
+      });
     }
 
     return NextResponse.json({ ok: true });
