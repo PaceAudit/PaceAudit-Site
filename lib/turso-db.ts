@@ -15,8 +15,9 @@ export function getTursoClient(): Client | null {
   const url = process.env.TURSO_DATABASE_URL?.trim();
   const token = process.env.TURSO_AUTH_TOKEN?.trim();
   if (!isValidTursoUrl(url) || !token) return null;
+  const validatedUrl = url as string;
   if (!tursoClient) {
-    tursoClient = createClient({ url, authToken: token });
+    tursoClient = createClient({ url: validatedUrl, authToken: token });
   }
   return tursoClient;
 }
