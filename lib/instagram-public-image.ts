@@ -1,6 +1,15 @@
 import { put } from "@vercel/blob";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
+import { deployFileToNetlify } from "@/lib/netlify-deploy";
+
+/** SDK defaults to BLOB_READ_WRITE_TOKEN; allow a custom name from Vercel env UI. */
+function getBlobReadWriteToken(): string | undefined {
+  const t =
+    process.env.BLOB_READ_WRITE_TOKEN?.trim() ||
+    process.env.NEW_BLOB_READ_WRITE_TOKEN?.trim();
+  return t || undefined;
+}
 
 /**
  * Turn a data URL (or pass through http URL) into a URL Instagram's servers can fetch.
@@ -34,24 +43,51 @@ export async function resolvePublicImageUrlForInstagram(
   const filename = `content-${contentId}-ig-${index}.${ext}`;
 
   if (process.env.VERCEL === "1") {
+    let blobMsg = "";
     try {
+      const blobToken = getBlobReadWriteToken();
       const blob = await put(`ig-publish/${filename}`, buf, {
         access: "public",
         contentType,
         addRandomSuffix: true,
+        ...(blobToken ? { token: blobToken } : {}),
       });
       return blob.url;
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error("[resolvePublicImageUrlForInstagram] Vercel Blob upload failed:", msg);
-      // Private Blob stores reject public uploads; Instagram needs a URL Meta can fetch without auth.
-      if (/private store|cannot use public access/i.test(msg)) {
-        throw new Error(
-          "Vercel Blob store is private. For Instagram publishing, create a public Blob store (Vercel Dashboard → Storage → Create → Public), connect it to this project, redeploy, and ensure BLOB_READ_WRITE_TOKEN is from that store."
-        );
-      }
-      return null;
+      blobMsg = e instanceof Error ? e.message : String(e);
+      console.error("[resolvePublicImageUrlForInstagram] Vercel Blob upload failed:", blobMsg);
     }
+
+    // Blob often missing (no store linked) or private; Netlify hosts a public HTTPS file on your site.
+    if (process.env.NETLIFY_AUTH_TOKEN && process.env.NETLIFY_SITE_ID) {
+      const netlifyPath = `ig-publish/content-${contentId}-ig-${index}-${Date.now()}.${ext}`;
+      const net = await deployFileToNetlify({
+        filePath: netlifyPath,
+        content: buf,
+        contentType,
+      });
+      if (net.ok && net.url) {
+        const publicImageUrl = new URL(netlifyPath, `${net.url.replace(/\/$/, "")}/`).href;
+        console.log("[resolvePublicImageUrlForInstagram] Netlify fallback URL:", publicImageUrl.slice(0, 80) + "…");
+        return publicImageUrl;
+      }
+      console.error("[resolvePublicImageUrlForInstagram] Netlify fallback failed:", net.error);
+    }
+
+    if (/no token/i.test(blobMsg)) {
+      throw new Error(
+        "Blob token missing: set BLOB_READ_WRITE_TOKEN or NEW_BLOB_READ_WRITE_TOKEN (read/write token from Vercel → Storage → your Blob store), redeploy. Or use NETLIFY_AUTH_TOKEN + NETLIFY_SITE_ID for Netlify image hosting."
+      );
+    }
+    if (/private store|cannot use public access/i.test(blobMsg)) {
+      throw new Error(
+        "Vercel Blob store is private (public uploads are blocked). Create a public Blob store and link it, or set NETLIFY_AUTH_TOKEN + NETLIFY_SITE_ID for Netlify image hosting."
+      );
+    }
+    if (blobMsg) {
+      throw new Error(`Could not upload image for Instagram: ${blobMsg.slice(0, 280)}`);
+    }
+    return null;
   }
 
   const dir = join(process.cwd(), "public", "generated");
