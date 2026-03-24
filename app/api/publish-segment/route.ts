@@ -1,48 +1,13 @@
 import { NextResponse } from "next/server";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
-import { join } from "path";
 import { getDb, useTurso } from "@/lib/db";
 import { buildBlogPostHtml } from "@/lib/blog-template";
 import { publishToX, publishToLinkedIn } from "@/lib/scheduler";
 import { publishToInstagram } from "@/lib/publish-service";
 import { deployFileToNetlify } from "@/lib/netlify-deploy";
-
-/** If imageUrl is a data URL, write to public/generated and return SITE_URL path so Instagram can fetch it. */
-function ensurePublicImageUrl(
-  imageUrl: string | null | undefined,
-  contentId: number,
-  index: number,
-  siteUrl: string | undefined
-): string | null {
-  const raw = imageUrl && String(imageUrl).trim();
-  if (!raw) return null;
-  if (raw.startsWith("http")) return raw;
-
-  if (!raw.startsWith("data:") || !siteUrl) return null;
-  const match = raw.match(/^data:image\/(\w+);base64,(.+)$/);
-  if (!match) return null;
-
-  const ext = match[1] === "png" ? "png" : "jpg";
-  const base64 = match[2];
-  let buf: Buffer;
-  try {
-    buf = Buffer.from(base64, "base64");
-  } catch {
-    return null;
-  }
-
-  const dir = join(process.cwd(), "public", "generated");
-  try {
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    const filename = `content-${contentId}-ig-${index}.${ext}`;
-    const path = join(dir, filename);
-    writeFileSync(path, buf);
-    const base = siteUrl.replace(/\/$/, "");
-    return `${base}/generated/${filename}`;
-  } catch {
-    return null;
-  }
-}
+import {
+  getSiteUrlFromRequest,
+  resolvePublicImageUrlForInstagram,
+} from "@/lib/instagram-public-image";
 
 function slugify(title: string): string {
   return title.toLowerCase().trim().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "").replace(/-+/g, "-").replace(/^-|-$/g, "") || "post";
@@ -182,17 +147,7 @@ export async function POST(request: Request) {
     if (!contentRow || contentRow.id == null) {
       // Allow Instagram manual publish from request fields when DB rows are missing.
       if (platform === "instagram" && requestCaption && requestImageUrl) {
-        // If SITE_URL is missing, derive base URL from the request origin so we can still serve
-        // the data URL by writing to `public/generated`.
-        const derivedFromEnv = process.env.SITE_URL?.trim();
-        const derivedFromRequest = (() => {
-          try {
-            return new URL(request.url).origin;
-          } catch {
-            return undefined;
-          }
-        })();
-        const siteUrl = derivedFromEnv || derivedFromRequest;
+        const siteUrl = getSiteUrlFromRequest(request);
 
         const isHttpUrl = requestImageUrl.startsWith("http");
         const isDataUrl = requestImageUrl.startsWith("data:");
@@ -203,8 +158,8 @@ export async function POST(request: Request) {
           captionLen: requestCaption.length,
           imageKind: imgKind,
           siteUrlDerived: {
-            envPresent: !!derivedFromEnv,
-            requestOrigin: derivedFromRequest ?? null,
+            envPresent: !!process.env.SITE_URL?.trim(),
+            origin: siteUrl ?? null,
           },
         });
 
@@ -216,7 +171,7 @@ export async function POST(request: Request) {
             siteUrlPresent: !!siteUrl,
             siteUrlPrefix: siteUrl ? siteUrl.slice(0, 32) : null,
           });
-          publicUrl = ensurePublicImageUrl(requestImageUrl, topicId, index, siteUrl);
+          publicUrl = await resolvePublicImageUrlForInstagram(requestImageUrl, topicId, index, siteUrl);
           console.log("[PUBLISH_SEGMENT] ensurePublicImageUrl result:", {
             topicId,
             index,
@@ -358,10 +313,11 @@ export async function POST(request: Request) {
         /* ignore */
       }
       const imageUrl = (Array.isArray(igUrls) ? igUrls[index] : null) ?? (contentRow.image_url as string);
-      const siteUrl = process.env.SITE_URL?.trim();
-      let publicUrl = imageUrl && String(imageUrl).startsWith("http") ? String(imageUrl) : null;
+      const siteUrl = getSiteUrlFromRequest(request);
+      let publicUrl: string | null =
+        imageUrl && String(imageUrl).startsWith("http") ? String(imageUrl) : null;
       if (!publicUrl && imageUrl && siteUrl) {
-        publicUrl = ensurePublicImageUrl(imageUrl, contentId, index, siteUrl);
+        publicUrl = await resolvePublicImageUrlForInstagram(imageUrl, contentId, index, siteUrl);
       }
       if (!publicUrl || !isPublicHttpUrl(publicUrl)) {
         const hasDataUrl = imageUrl && String(imageUrl).startsWith("data:");
