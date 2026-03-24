@@ -16,10 +16,16 @@ export type MediaItem = {
 };
 
 function metaPath(): string {
+  if (process.env.VERCEL) {
+    return join("/tmp", META_FILE);
+  }
   return join(process.cwd(), META_FILE);
 }
 
 function uploadDir(): string {
+  if (process.env.VERCEL) {
+    return join("/tmp", "content-images");
+  }
   return join(process.cwd(), UPLOAD_DIR);
 }
 
