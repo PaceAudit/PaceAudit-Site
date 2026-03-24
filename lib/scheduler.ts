@@ -138,6 +138,10 @@ export async function publishToX(text: string): Promise<{ ok: boolean; error?: s
   }
 }
 
+/** YYYYMM; older values are sunset (e.g. 202401 → NONEXISTENT_VERSION). Override with LINKEDIN_API_VERSION. */
+const LINKEDIN_REST_API_VERSION =
+  (typeof process !== "undefined" && process.env.LINKEDIN_API_VERSION?.trim()) || "202510";
+
 /** Post the first LinkedIn post via LinkedIn REST API (UGC/Posts). Uses OAuth token (refreshed if needed) or LINKEDIN_ACCESS_TOKEN. Person URN from OAuth or LINKEDIN_PERSON_URN env. */
 export async function publishToLinkedIn(text: string): Promise<{ ok: boolean; error?: string }> {
   const accessToken = await getLinkedInAccessToken();
@@ -154,7 +158,7 @@ export async function publishToLinkedIn(text: string): Promise<{ ok: boolean; er
         "Content-Type": "application/json",
         "Authorization": `Bearer ${accessToken}`,
         "X-Restli-Protocol-Version": "2.0.0",
-        "LinkedIn-Version": "202401",
+        "LinkedIn-Version": LINKEDIN_REST_API_VERSION,
       },
       body: JSON.stringify({
         author: personUrn.startsWith("urn:") ? personUrn : `urn:li:person:${personUrn}`,
