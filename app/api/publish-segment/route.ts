@@ -37,6 +37,16 @@ function parseJsonArray(raw: string | null | undefined): string[] {
   }
 }
 
+/** Safe log shape: never dump multi‑MB data URLs into the console. */
+function summarizePublishBody(body: Record<string, unknown>): Record<string, unknown> {
+  const imageUrl = body.imageUrl;
+  if (typeof imageUrl !== "string" || imageUrl.length < 200) return body;
+  return {
+    ...body,
+    imageUrl: `${imageUrl.slice(0, 80)}… (${imageUrl.length} chars, data URL or long URL)`,
+  };
+}
+
 function parsePostedIndices(raw: string | null | undefined): number[] {
   if (raw == null || !String(raw).trim()) return [];
   try {
@@ -54,8 +64,8 @@ function parsePostedIndices(raw: string | null | undefined): number[] {
  */
 export async function POST(request: Request) {
   try {
-    const body = await request.json().catch(() => ({}));
-    console.log("[PUBLISH_SEGMENT] Incoming payload:", body);
+    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    console.log("[PUBLISH_SEGMENT] Incoming payload:", summarizePublishBody(body));
     const topicId = typeof body.topicId === "number" ? body.topicId : parseInt(String(body.topicId ?? ""), 10);
     const platform = String(body.platform ?? "").toLowerCase();
     const index = typeof body.index === "number" ? Math.max(0, Math.floor(body.index)) : 0;
@@ -103,7 +113,19 @@ export async function POST(request: Request) {
          WHERE topic_id = ?`
       )
       .all(topicId);
-    console.log(`[PUBLISH_SEGMENT] ALL content saved for topicId=${topicId}:`, allTopicContent);
+    // Avoid logging huge base64 / HTML blobs (was megabytes per row).
+    console.log(
+      `[PUBLISH_SEGMENT] content row count for topicId=${topicId}:`,
+      Array.isArray(allTopicContent) ? allTopicContent.length : 0,
+      Array.isArray(allTopicContent)
+        ? (allTopicContent as Record<string, unknown>[]).map((r) => ({
+            id: r.id,
+            blogHtmlLen: typeof r.blog_html === "string" ? r.blog_html.length : 0,
+            imageUrlLen: typeof r.image_url === "string" ? r.image_url.length : 0,
+            igUrlsLen: typeof r.instagram_image_urls === "string" ? r.instagram_image_urls.length : 0,
+          }))
+        : []
+    );
 
     // Prefer querying Content directly (avoid INNER JOIN hiding the row if Topics is missing).
     const contentRow = (await db
@@ -122,7 +144,18 @@ export async function POST(request: Request) {
     // Also log the Topics row to distinguish "missing topic" vs "missing content".
     const topicRow = await db.prepare("SELECT * FROM Topics WHERE id = ?").get(topicId);
     console.log("[PUBLISH_SEGMENT] Topics row result:", topicRow);
-    console.log("[PUBLISH_SEGMENT] contentRow result:", contentRow);
+    console.log("[PUBLISH_SEGMENT] contentRow summary:", contentRow
+      ? {
+          id: contentRow.id,
+          topic_id: contentRow.topic_id,
+          blogHtmlLen: typeof contentRow.blog_html === "string" ? contentRow.blog_html.length : 0,
+          imageUrlLen: typeof contentRow.image_url === "string" ? contentRow.image_url.length : 0,
+          igUrlsLen:
+            typeof contentRow.instagram_image_urls === "string"
+              ? contentRow.instagram_image_urls.length
+              : 0,
+        }
+      : null);
 
     // #region agent log
     fetch("http://127.0.0.1:7822/ingest/d299f8e8-acc9-48de-a2c7-afb2bceab8c9", {
@@ -300,7 +333,9 @@ export async function POST(request: Request) {
     }
 
     if (platform === "instagram") {
-      const caption = facebookCopy[index]?.trim();
+      // Per-card "Publish now" sends caption + imageUrl; prefer those so we post exactly that slot only.
+      const captionFromDb = facebookCopy[index]?.trim() ?? "";
+      const caption = (requestCaption ? requestCaption : captionFromDb).trim();
       if (!caption) return NextResponse.json({ error: "No Instagram caption at this index" }, { status: 400 });
       if (instagramPosted.includes(index)) {
         return NextResponse.json({ ok: true, platform: "instagram", index, alreadyPosted: true });
@@ -312,7 +347,9 @@ export async function POST(request: Request) {
       } catch {
         /* ignore */
       }
-      const imageUrl = (Array.isArray(igUrls) ? igUrls[index] : null) ?? (contentRow.image_url as string);
+      const imageUrlFromDb =
+        (Array.isArray(igUrls) ? igUrls[index] : null) ?? (contentRow.image_url as string | undefined);
+      const imageUrl = (requestImageUrl ? requestImageUrl : imageUrlFromDb) as string | undefined;
       const siteUrl = getSiteUrlFromRequest(request);
       let publicUrl: string | null =
         imageUrl && String(imageUrl).startsWith("http") ? String(imageUrl) : null;

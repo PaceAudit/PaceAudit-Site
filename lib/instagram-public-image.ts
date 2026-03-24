@@ -42,7 +42,14 @@ export async function resolvePublicImageUrlForInstagram(
       });
       return blob.url;
     } catch (e) {
-      console.error("[resolvePublicImageUrlForInstagram] Vercel Blob upload failed:", e);
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("[resolvePublicImageUrlForInstagram] Vercel Blob upload failed:", msg);
+      // Private Blob stores reject public uploads; Instagram needs a URL Meta can fetch without auth.
+      if (/private store|cannot use public access/i.test(msg)) {
+        throw new Error(
+          "Vercel Blob store is private. For Instagram publishing, create a public Blob store (Vercel Dashboard → Storage → Create → Public), connect it to this project, redeploy, and ensure BLOB_READ_WRITE_TOKEN is from that store."
+        );
+      }
       return null;
     }
   }
