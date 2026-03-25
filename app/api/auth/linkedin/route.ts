@@ -14,7 +14,11 @@ export async function GET(request: Request) {
     );
   }
 
-  const scope = "w_member_social openid profile email";
+  // Company Page posts need w_organization_social; personal posts use w_member_social.
+  const orgUrn = process.env.LINKEDIN_ORGANIZATION_URN?.trim();
+  const scope = orgUrn
+    ? "w_member_social w_organization_social openid profile email"
+    : "w_member_social openid profile email";
   const state = randomBytes(16).toString("hex");
 
   let redirectUri = process.env.LINKEDIN_REDIRECT_URI;

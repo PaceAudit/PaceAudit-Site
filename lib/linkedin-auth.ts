@@ -76,6 +76,80 @@ export async function getLinkedInPersonUrn(): Promise<string | null> {
   return process.env.LINKEDIN_PERSON_URN ?? null;
 }
 
+/**
+ * URN used as `author` on POST /rest/posts.
+ * - If LINKEDIN_ORGANIZATION_URN is set → post as that Company Page (needs w_organization_social + reconnect).
+ * - Else → member profile from Config / LINKEDIN_PERSON_URN (w_member_social).
+ */
+export async function getLinkedInPostsAuthorUrn(): Promise<string | null> {
+  const orgRaw = process.env.LINKEDIN_ORGANIZATION_URN?.trim();
+  if (orgRaw) {
+    if (orgRaw.startsWith("urn:li:organization:")) return orgRaw;
+    const id = orgRaw.replace(/^urn:li:organization:/i, "").trim();
+    return id ? `urn:li:organization:${id}` : null;
+  }
+
+  const person = await getLinkedInPersonUrn();
+  if (!person) return null;
+  if (person.startsWith("urn:li:person:") || person.startsWith("urn:li:organization:")) {
+    return person;
+  }
+  if (person.startsWith("urn:")) return person;
+  return `urn:li:person:${person}`;
+}
+
+/** YYYYMM; older values are sunset. Override with LINKEDIN_API_VERSION. */
+const LINKEDIN_REST_API_VERSION =
+  (typeof process !== "undefined" && process.env.LINKEDIN_API_VERSION?.trim()) || "202510";
+
+/** POST /rest/posts — personal profile or Company Page (see LINKEDIN_ORGANIZATION_URN + w_organization_social). */
+export async function publishLinkedInPost(text: string): Promise<{ ok: boolean; error?: string }> {
+  const accessToken = await getLinkedInAccessToken();
+  const authorUrn = await getLinkedInPostsAuthorUrn();
+
+  if (!accessToken || !authorUrn) {
+    return { ok: false, error: "LinkedIn not connected (Connect LinkedIn) or LINKEDIN_ACCESS_TOKEN and author URN required" };
+  }
+
+  const postingAsOrg = authorUrn.startsWith("urn:li:organization:");
+  const orgPostingEnabled = !!process.env.LINKEDIN_ORGANIZATION_URN?.trim();
+  if (postingAsOrg && !orgPostingEnabled) {
+    return {
+      ok: false,
+      error:
+        "LinkedIn author is a Company Page (urn:li:organization:…), but your connection only has personal posting. Either: (1) Clear the wrong URN and reconnect LinkedIn so a personal urn:li:person:… is saved, or (2) Set LINKEDIN_ORGANIZATION_URN to that company ID, add w_organization_social in your LinkedIn app, ensure you’re an admin, then Connect LinkedIn again.",
+    };
+  }
+
+  try {
+    const res = await fetch("https://api.linkedin.com/rest/posts", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+        "X-Restli-Protocol-Version": "2.0.0",
+        "LinkedIn-Version": LINKEDIN_REST_API_VERSION,
+      },
+      body: JSON.stringify({
+        author: authorUrn,
+        commentary: text,
+        visibility: "PUBLIC",
+        distribution: { feedDistribution: "MAIN_FEED" },
+        lifecycleState: "PUBLISHED",
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.text();
+      return { ok: false, error: `${res.status}: ${err}` };
+    }
+    return { ok: true };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return { ok: false, error: message };
+  }
+}
+
 /** Save tokens and optional person URN to Config and JSON file. When person_urn is undefined, only tokens are updated (preserves existing URN). */
 export async function saveLinkedInTokens(
   access_token: string,

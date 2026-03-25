@@ -44,45 +44,6 @@ async function publishToX(text: string): Promise<{ ok: boolean; error?: string }
   }
 }
 
-/** Publish text to LinkedIn via REST API. */
-async function publishToLinkedIn(text: string): Promise<{ ok: boolean; error?: string }> {
-  const { getLinkedInAccessToken, getLinkedInPersonUrn } = await import("./linkedin-auth");
-  const accessToken = await getLinkedInAccessToken();
-  const personUrn = await getLinkedInPersonUrn();
-
-  if (!accessToken || !personUrn) {
-    return { ok: false, error: "LinkedIn not connected (Connect LinkedIn) or env vars missing" };
-  }
-
-  try {
-    const res = await fetch("https://api.linkedin.com/rest/posts", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${accessToken}`,
-        "X-Restli-Protocol-Version": "2.0.0",
-        "LinkedIn-Version": "202401",
-      },
-      body: JSON.stringify({
-        author: personUrn.startsWith("urn:") ? personUrn : `urn:li:person:${personUrn}`,
-        commentary: text,
-        visibility: "PUBLIC",
-        distribution: { feedDistribution: "MAIN_FEED" },
-        lifecycleState: "PUBLISHED",
-      }),
-    });
-
-    if (!res.ok) {
-      const err = await res.text();
-      return { ok: false, error: `${res.status}: ${err}` };
-    }
-    return { ok: true };
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: message };
-  }
-}
-
 /**
  * Publish content to all configured social platforms.
  * X and LinkedIn: text only.
@@ -101,7 +62,8 @@ export async function publishContent(content: PublishContent): Promise<PublishRe
 
   // LinkedIn — text only
   try {
-    results.linkedin = await publishToLinkedIn(text);
+    const { publishLinkedInPost } = await import("./linkedin-auth");
+    results.linkedin = await publishLinkedInPost(text);
   } catch (e) {
     results.linkedin = { ok: false, error: e instanceof Error ? e.message : String(e) };
   }

@@ -6,8 +6,10 @@ import cron from "node-cron";
 import { Octokit } from "octokit";
 import { TwitterApi } from "twitter-api-v2";
 import { getDb } from "./db";
-import { getLinkedInAccessToken, getLinkedInPersonUrn } from "./linkedin-auth";
+import { publishLinkedInPost } from "./linkedin-auth";
 import { publishToFacebook, publishToInstagram } from "./publish-service";
+
+export { publishLinkedInPost as publishToLinkedIn };
 
 type ContentRow = {
   id: number;
@@ -133,50 +135,40 @@ export async function publishToX(text: string): Promise<{ ok: boolean; error?: s
     await rw.v2.tweet(text.slice(0, 280));
     return { ok: true };
   } catch (e) {
+    const anyErr = e as unknown as Record<string, unknown>;
     const message = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: message };
-  }
-}
+    const code =
+      typeof anyErr.code === "number"
+        ? anyErr.code
+        : typeof anyErr.statusCode === "number"
+          ? anyErr.statusCode
+          : typeof anyErr.status === "number"
+            ? anyErr.status
+            : null;
+    const title = typeof anyErr.title === "string" ? anyErr.title : null;
+    const detail = typeof anyErr.detail === "string" ? anyErr.detail : null;
+    const data = anyErr.data;
+    const dataSummary =
+      data && typeof data === "object"
+        ? (() => {
+            try {
+              // twitter-api-v2 often includes structured API errors under `data`.
+              return JSON.stringify(data).slice(0, 600);
+            } catch {
+              return null;
+            }
+          })()
+        : null;
 
-/** YYYYMM; older values are sunset (e.g. 202401 → NONEXISTENT_VERSION). Override with LINKEDIN_API_VERSION. */
-const LINKEDIN_REST_API_VERSION =
-  (typeof process !== "undefined" && process.env.LINKEDIN_API_VERSION?.trim()) || "202510";
+    const parts = [
+      code ? `HTTP ${code}` : null,
+      title,
+      detail,
+      dataSummary ? `data=${dataSummary}` : null,
+      !code && !title && !detail && !dataSummary ? message : null,
+    ].filter(Boolean);
 
-/** Post the first LinkedIn post via LinkedIn REST API (UGC/Posts). Uses OAuth token (refreshed if needed) or LINKEDIN_ACCESS_TOKEN. Person URN from OAuth or LINKEDIN_PERSON_URN env. */
-export async function publishToLinkedIn(text: string): Promise<{ ok: boolean; error?: string }> {
-  const accessToken = await getLinkedInAccessToken();
-  const personUrn = await getLinkedInPersonUrn();
-
-  if (!accessToken || !personUrn) {
-    return { ok: false, error: "LinkedIn not connected (Connect LinkedIn) or LINKEDIN_ACCESS_TOKEN and LINKEDIN_PERSON_URN required" };
-  }
-
-  try {
-    const res = await fetch("https://api.linkedin.com/rest/posts", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${accessToken}`,
-        "X-Restli-Protocol-Version": "2.0.0",
-        "LinkedIn-Version": LINKEDIN_REST_API_VERSION,
-      },
-      body: JSON.stringify({
-        author: personUrn.startsWith("urn:") ? personUrn : `urn:li:person:${personUrn}`,
-        commentary: text,
-        visibility: "PUBLIC",
-        distribution: { feedDistribution: "MAIN_FEED" },
-        lifecycleState: "PUBLISHED",
-      }),
-    });
-
-    if (!res.ok) {
-      const err = await res.text();
-      return { ok: false, error: `${res.status}: ${err}` };
-    }
-    return { ok: true };
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    return { ok: false, error: message };
+    return { ok: false, error: parts.join(" | ") };
   }
 }
 
@@ -274,7 +266,7 @@ async function runPublishCycle(): Promise<void> {
       }
     }
     if (firstLinkedIn && liIdx != null) {
-      const li = await publishToLinkedIn(firstLinkedIn);
+      const li = await publishLinkedInPost(firstLinkedIn);
       if (!li.ok) console.error("[scheduler] LinkedIn:", li.error);
       if (li.ok) {
         const next = [...linkedinPosted, liIdx].sort((a, b) => a - b);
